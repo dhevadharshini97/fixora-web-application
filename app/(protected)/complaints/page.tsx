@@ -24,16 +24,26 @@ export default function MyComplaintsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let localComplaints: Complaint[] = [];
     try {
       setMine(JSON.parse(localStorage.getItem("fixora_my_complaints") ?? "[]"));
+      localComplaints = JSON.parse(localStorage.getItem("fixora_local_complaints") ?? "[]");
     } catch {}
+
     fetch("/api/complaints")
       .then((r) => r.json())
       .then((d) => {
-        setComplaints(d.complaints ?? []);
+        const serverComplaints = d.complaints ?? [];
+        const merged = [...localComplaints, ...serverComplaints].filter(
+          (c, i, arr) => arr.findIndex((x) => x.id === c.id) === i
+        );
+        setComplaints(merged);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        setComplaints(localComplaints);
+        setLoading(false);
+      });
   }, []);
 
   const myComplaints = useMemo(() => {
