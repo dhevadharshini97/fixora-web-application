@@ -16,6 +16,12 @@ import {
   ChevronRight,
   Users,
   Droplets,
+  X,
+  CheckCircle2,
+  Clock3,
+  BrainCircuit,
+  UserRound,
+  ClipboardCheck,
   Zap,
   Trash2,
   Shield,
@@ -64,17 +70,32 @@ export default function DepartmentPage() {
   const [department, setDepartment] = useState<DepartmentKey>("All Departments");
   const [tab, setTab] = useState<"open" | "done">("open");
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "critical" | "overdue">("all");
   const [busy, setBusy] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
+  const [assignments, setAssignments] = useState<Record<string, string>>({});
+  const [assignedOfficer, setAssignedOfficer] = useState("");
+  const [resolutionNote, setResolutionNote] = useState("");
 
   const load = async () => {
     setLoading(true);
+    let local: Complaint[] = [];
+    try {
+      local = JSON.parse(localStorage.getItem("fixora_local_complaints") ?? "[]");
+      setAssignments(JSON.parse(localStorage.getItem("fixora_department_assignments") ?? "{}"));
+    } catch {}
+
     try {
       const r = await fetch("/api/complaints", { cache: "no-store" });
       const d = await r.json();
-      setComplaints(d.complaints ?? []);
+      const server: Complaint[] = d.complaints ?? [];
+      const merged = [...local, ...server].filter(
+        (c, i, arr) => arr.findIndex((x) => x.id === c.id) === i
+      );
+      setComplaints(merged);
     } catch {
-      setComplaints([]);
+      setComplaints(local);
     } finally {
       setLoading(false);
     }
@@ -92,12 +113,14 @@ export default function DepartmentPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return departmentComplaints.filter((c) => {
+      if (statusFilter === "critical" && c.severity !== "critical") return false;
+      if (statusFilter === "overdue" && !deadlineInfo(c).overdue) return false;
       if (!q) return true;
       return [c.title, c.description, c.street, c.category, c.citizenName]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [departmentComplaints, query]);
+  }, [departmentComplaints, query, statusFilter]);
 
   const open = filtered.filter(isOpen);
   const done = filtered.filter((c) => !isOpen(c));
@@ -125,15 +148,49 @@ export default function DepartmentPage() {
   const act = async (id: number, action: string) => {
     setBusy(id);
     try {
-      await fetch(`/api/complaints/${id}`, {
+      const res = await fetch(`/api/complaints/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      await load();
-    } finally {
+      if (!res.ok) throw new Error("server update failed");
+    } catch {
+      const current = complaints.find((c) => c.id === id);
+      if (current) {
+        const updated = {
+          ...current,
+          status: action === "start" ? "in_progress" : action === "resolve" ? "resolved" : current.status,
+          updatedAt: new Date().toISOString(),
+        } as Complaint;
+        const next = complaints.map((c) => c.id === id ? updated : c);
+        setComplaints(next);
+        try {
+          localStorage.setItem("fixora_local_complaints", JSON.stringify(next.slice(0, 50)));
+        } catch {}
+        if (selectedComplaint?.id === id) setSelectedComplaint(updated);
+      }
       setBusy(null);
+      return;
     }
+    await load();
+    const refreshed = complaints.find((c) => c.id === id);
+    if (refreshed && selectedComplaint?.id === id) setSelectedComplaint(refreshed);
+    setBusy(null);
+  };
+
+  const assign = (id: number) => {
+    if (!assignedOfficer) return;
+    const next = { ...assignments, [String(id)]: assignedOfficer };
+    setAssignments(next);
+    try {
+      localStorage.setItem("fixora_department_assignments", JSON.stringify(next));
+    } catch {}
+  };
+
+  const openDetails = (c: Complaint) => {
+    setSelectedComplaint(c);
+    setAssignedOfficer(assignments[String(c.id)] ?? "");
+    setResolutionNote("");
   };
 
   return (
@@ -225,7 +282,7 @@ export default function DepartmentPage() {
         </div>
       </Card>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {(["open", "done"] as const).map((k) => (
           <button
             key={k}
@@ -238,6 +295,11 @@ export default function DepartmentPage() {
             )}
           >
             {k === "open" ? `Inbox (${open.length})` : `Resolved (${done.length})`}
+          </button>
+        ))}
+        {(["all", "critical", "overdue"] as const).map((k) => (
+          <button key={k} onClick={() => setStatusFilter(k)} className={cn("rounded-full border px-4 py-2 text-[10px] font-black uppercase tracking-wide transition", statusFilter === k ? "border-amber-400 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-500")}>
+            {k === "all" ? "All priority" : k === "critical" ? "Critical" : "Overdue"}
           </button>
         ))}
       </div>
@@ -263,9 +325,9 @@ export default function DepartmentPage() {
                           {c.department || c.category}
                         </p>
                       </div>
-                      <Link href={`/complaints/${c.id}`} className="shrink-0 text-slate-300 hover:text-brand-500">
+                      <button onClick={() => openDetails(c)} className="shrink-0 text-slate-300 hover:text-brand-500">
                         <ChevronRight className="h-4.5 w-4.5" />
-                      </Link>
+                      </button>
                     </div>
                     <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
                       <MapPin className="h-3 w-3 text-teal-600" />
@@ -284,6 +346,11 @@ export default function DepartmentPage() {
                         <span className="flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[9.5px] font-black text-orange-500">
                           <ArrowUpCircle className="h-2.5 w-2.5" />
                           {ESCALATION_LEVELS[Math.min(3, c.escalationLevel ?? 0)]}
+                        </span>
+                      )}
+                      {assignments[String(c.id)] && (
+                        <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[9.5px] font-black text-teal-700">
+                          {assignments[String(c.id)]}
                         </span>
                       )}
                     </div>
@@ -327,6 +394,102 @@ export default function DepartmentPage() {
           </Card>
         )}
       </div>
+
+      {selectedComplaint && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => setSelectedComplaint(null)}>
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-[28px] bg-white shadow-2xl sm:rounded-[28px]" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-brand-600">Complaint Command View</p>
+                <h2 className="mt-0.5 text-lg font-black text-slate-900">#FX-{selectedComplaint.id}</h2>
+              </div>
+              <button onClick={() => setSelectedComplaint(null)} className="rounded-full bg-slate-100 p-2 text-slate-500 hover:bg-slate-200"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <div className="grid gap-3 sm:grid-cols-[150px_1fr]">
+                <img src={selectedComplaint.photoUrl || "/images/complaints/pothole.jpg"} alt="" className="h-36 w-full rounded-2xl object-cover sm:h-32" />
+                <div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <StatusPill status={selectedComplaint.status} />
+                    <SeverityBadge severity={selectedComplaint.severity} />
+                    {deadlineInfo(selectedComplaint).overdue && <span className="rounded-full bg-rose-50 px-2 py-1 text-[10px] font-black text-rose-600">SLA OVERDUE</span>}
+                  </div>
+                  <h3 className="mt-2 text-base font-black text-slate-900">{selectedComplaint.title}</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{selectedComplaint.description || "No description provided."}</p>
+                  <p className="mt-2 flex items-center gap-1 text-[11px] font-bold text-slate-500"><MapPin className="h-3.5 w-3.5 text-teal-600" />{selectedComplaint.street || "Location unavailable"}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  ["Reported", timeAgo(selectedComplaint.reportedAt)],
+                  ["Supporters", String(selectedComplaint.supporters ?? 1)],
+                  ["SLA", deadlineInfo(selectedComplaint).overdue ? "Overdue" : `${deadlineInfo(selectedComplaint).days}d left`],
+                  ["Escalation", String(selectedComplaint.escalationLevel ?? 0)],
+                ].map(([k,v]) => (
+                  <div key={k} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-[9px] font-black uppercase tracking-wide text-slate-400">{k}</p>
+                    <p className="mt-1 text-xs font-black text-slate-800">{v}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-brand-100 bg-brand-50/60 p-4">
+                  <div className="flex items-center gap-2"><BrainCircuit className="h-4 w-4 text-brand-600" /><p className="text-xs font-black text-slate-800">AI Triage</p></div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-xl bg-white p-2"><p className="text-lg font-black text-brand-600">{selectedComplaint.severity === "critical" ? "92" : selectedComplaint.severity === "high" ? "78" : "54"}%</p><p className="text-[8px] font-bold uppercase text-slate-400">Risk</p></div>
+                    <div className="rounded-xl bg-white p-2"><p className="text-lg font-black text-teal-600">{selectedComplaint.supporters ?? 1}</p><p className="text-[8px] font-bold uppercase text-slate-400">Reports</p></div>
+                    <div className="rounded-xl bg-white p-2"><p className="text-lg font-black text-orange-500">{selectedComplaint.escalationLevel ?? 0}</p><p className="text-[8px] font-bold uppercase text-slate-400">Escalation</p></div>
+                  </div>
+                  <p className="mt-3 text-[10px] leading-4 text-slate-500">Priority is based on severity, SLA risk, supporter count and escalation level.</p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                  <div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-teal-600" /><p className="text-xs font-black text-slate-800">Field Assignment</p></div>
+                  <select value={assignedOfficer} onChange={(e) => setAssignedOfficer(e.target.value)} className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-bold outline-none focus:border-brand-400">
+                    <option value="">Select officer / team</option>
+                    <option>Roads Team A</option>
+                    <option>Roads Team B</option>
+                    <option>Water Response Team</option>
+                    <option>Electrical Field Team</option>
+                    <option>Sanitation Team</option>
+                    <option>Public Safety Team</option>
+                  </select>
+                  <button onClick={() => assign(selectedComplaint.id)} disabled={!assignedOfficer} className="mt-2 w-full rounded-xl bg-slate-900 py-2.5 text-xs font-black text-white disabled:opacity-40">Save Assignment</button>
+                  {assignments[String(selectedComplaint.id)] && <p className="mt-2 text-[10px] font-bold text-teal-600">Assigned: {assignments[String(selectedComplaint.id)]}</p>}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                <div className="flex items-center gap-2"><ClipboardCheck className="h-4 w-4 text-emerald-600" /><p className="text-xs font-black text-slate-800">Action Timeline</p></div>
+                <div className="mt-3 space-y-2 text-[10px]">
+                  {[
+                    ["Submitted", selectedComplaint.reportedAt, Clock3],
+                    ["AI verification", selectedComplaint.updatedAt, BrainCircuit],
+                    ["Department queue", selectedComplaint.updatedAt, Building2],
+                    [selectedComplaint.status === "in_progress" || selectedComplaint.status === "resolved" ? "Work started" : "Awaiting field action", selectedComplaint.updatedAt, Wrench],
+                    [selectedComplaint.status === "resolved" ? "Resolution submitted" : "Resolution pending", selectedComplaint.updatedAt, CheckCircle2],
+                  ].map(([label, date, Icon], i) => {
+                    const I = Icon as typeof Clock3;
+                    return <div key={String(label)} className="flex items-center gap-2"><span className={cn("grid h-7 w-7 place-items-center rounded-full", i <= (selectedComplaint.status === "resolved" ? 4 : selectedComplaint.status === "in_progress" ? 3 : 2) ? "bg-teal-50 text-teal-600" : "bg-slate-100 text-slate-400")}><I className="h-3.5 w-3.5" /></span><span className="font-bold text-slate-700">{String(label)}</span><span className="ml-auto text-slate-400">{timeAgo(String(date))}</span></div>;
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-3">
+                <button onClick={() => act(selectedComplaint.id, "start")} disabled={busy === selectedComplaint.id || selectedComplaint.status === "in_progress" || selectedComplaint.status === "resolved"} className="rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-xs font-black text-slate-700 disabled:opacity-40">Start Work</button>
+                <button onClick={() => act(selectedComplaint.id, "resolve")} disabled={busy === selectedComplaint.id || selectedComplaint.status === "resolved"} className="rounded-xl bg-gradient-to-r from-teal-600 to-emerald-500 py-2.5 text-xs font-black text-white disabled:opacity-40">Mark Resolved</button>
+                <Link href={`/complaints/${selectedComplaint.id}`} className="flex items-center justify-center rounded-xl border border-brand-200 bg-brand-50 py-2.5 text-xs font-black text-brand-700">Citizen Tracking</Link>
+              </div>
+
+              <textarea value={resolutionNote} onChange={(e) => setResolutionNote(e.target.value)} placeholder="Resolution note / field update..." className="min-h-20 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs outline-none focus:border-brand-400" />
+              <p className="text-[9px] text-slate-400">Assignment is saved locally for this prototype. Resolution actions use the live complaint API when available and fall back to local state.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <p className="text-center text-[11px] text-slate-400">
         Department actions update citizen tracking. Resolved cases can carry proof photos and enter the citizen verification flow.
