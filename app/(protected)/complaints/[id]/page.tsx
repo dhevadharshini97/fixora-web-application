@@ -38,7 +38,29 @@ export default function ComplaintTrackingPage() {
     try {
       const res = await fetch(`/api/complaints/${params.id}`, { cache: "no-store" });
       const data = await res.json();
-      if (res.ok) setComplaint(data.complaint);
+      if (res.ok && data.complaint) {
+        setComplaint(data.complaint);
+        try {
+          const saved = JSON.parse(localStorage.getItem("fixora_local_complaints") ?? "[]");
+          localStorage.setItem(
+            "fixora_local_complaints",
+            JSON.stringify([data.complaint, ...saved.filter((c: Complaint) => c.id !== data.complaint.id)].slice(0, 50))
+          );
+        } catch {}
+        return;
+      }
+
+      try {
+        const saved: Complaint[] = JSON.parse(localStorage.getItem("fixora_local_complaints") ?? "[]");
+        const local = saved.find((c) => String(c.id) === String(params.id));
+        if (local) setComplaint(local);
+      } catch {}
+    } catch {
+      try {
+        const saved: Complaint[] = JSON.parse(localStorage.getItem("fixora_local_complaints") ?? "[]");
+        const local = saved.find((c) => String(c.id) === String(params.id));
+        if (local) setComplaint(local);
+      } catch {}
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -54,12 +76,54 @@ export default function ComplaintTrackingPage() {
     setActionLoading(true);
     try {
       const res = await fetch(`/api/complaints/${params.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: name, dna: complaint?.problemDna }),
       });
       const data = await res.json();
-      if (res.ok) setComplaint(data.complaint);
-    } finally { setActionLoading(false); }
+      if (res.ok && data.complaint) {
+        setComplaint(data.complaint);
+        return;
+      }
+
+      if (complaint) {
+        const updated = {
+          ...complaint,
+          status: name === "verify" ? "verified" : "reopened",
+          reopenCount: name === "reopen" ? (complaint.reopenCount ?? 0) + 1 : complaint.reopenCount,
+          escalationLevel: name === "reopen" ? Math.min((complaint.escalationLevel ?? 0) + 1, 3) : complaint.escalationLevel,
+          updatedAt: new Date().toISOString(),
+        } as Complaint;
+        setComplaint(updated);
+        try {
+          const saved: Complaint[] = JSON.parse(localStorage.getItem("fixora_local_complaints") ?? "[]");
+          localStorage.setItem(
+            "fixora_local_complaints",
+            JSON.stringify([updated, ...saved.filter((c) => c.id !== updated.id)].slice(0, 50))
+          );
+        } catch {}
+      }
+    } catch {
+      if (complaint) {
+        const updated = {
+          ...complaint,
+          status: name === "verify" ? "verified" : "reopened",
+          reopenCount: name === "reopen" ? (complaint.reopenCount ?? 0) + 1 : complaint.reopenCount,
+          escalationLevel: name === "reopen" ? Math.min((complaint.escalationLevel ?? 0) + 1, 3) : complaint.escalationLevel,
+          updatedAt: new Date().toISOString(),
+        } as Complaint;
+        setComplaint(updated);
+        try {
+          const saved: Complaint[] = JSON.parse(localStorage.getItem("fixora_local_complaints") ?? "[]");
+          localStorage.setItem(
+            "fixora_local_complaints",
+            JSON.stringify([updated, ...saved.filter((c) => c.id !== updated.id)].slice(0, 50))
+          );
+        } catch {}
+      }
+    } finally {
+      setActionLoading(false);
+    }
   }
 
   const dl = complaint ? deadlineInfo(complaint) : null;
