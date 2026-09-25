@@ -352,7 +352,7 @@ export default function ReportPage() {
         markMine(d.complaint.id);
       } else throw new Error();
     } catch {
-      setResult({
+      const offlineComplaint = {
         id: Date.now(),
         ...body,
         status: "assigned",
@@ -363,7 +363,16 @@ export default function ReportPage() {
         deadline: new Date(Date.now() + sla * 86400000).toISOString(),
         reportedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      } as unknown as Complaint);
+      } as unknown as Complaint;
+      setResult(offlineComplaint);
+      markMine(offlineComplaint.id);
+      try {
+        const saved = JSON.parse(localStorage.getItem("fixora_local_complaints") ?? "[]");
+        localStorage.setItem(
+          "fixora_local_complaints",
+          JSON.stringify([offlineComplaint, ...saved.filter((c: Complaint) => c.id !== offlineComplaint.id)].slice(0, 50))
+        );
+      } catch {}
     }
     setSubmitting(false);
     setStage("done");
