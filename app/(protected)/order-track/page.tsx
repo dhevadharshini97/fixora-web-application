@@ -38,7 +38,7 @@ export default function OrderTrackPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <section className="overflow-hidden rounded-[30px] bg-gradient-to-br from-brand-700 via-brand-600 to-teal-600 p-7 text-white shadow-xl">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
-          <ClipboardSearch className="h-6 w-6" />
+          <Clipboard className="h-6 w-6" />
         </div>
         <p className="mt-5 text-[10px] font-black uppercase tracking-[0.28em] text-teal-200">
           FIXORA · LIVE TRACKING
