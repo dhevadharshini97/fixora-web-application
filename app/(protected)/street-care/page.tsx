@@ -15,6 +15,8 @@ import {
   TriangleAlert,
   HeartPulse,
   Info,
+  MapPin,
+  ChevronDown,
 } from "lucide-react";
 import type { Complaint } from "@/db/schema";
 import { Card, Btn, SeverityBadge } from "@/components/ui";
@@ -54,6 +56,19 @@ export default function StreetCarePage() {
   const { t } = useI18n();
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedStreet, setSelectedStreet] = useState("T. Nagar");
+
+  const STREET_OPTIONS = ["T. Nagar", "Anna Nagar", "K.K. Nagar", "Ashok Nagar", "Adyar", "Velachery"];
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("fixora_street_care_location");
+    if (saved && STREET_OPTIONS.includes(saved)) setSelectedStreet(saved);
+  }, []);
+
+  const changeStreet = (value: string) => {
+    setSelectedStreet(value);
+    window.localStorage.setItem("fixora_street_care_location", value);
+  };
 
   useEffect(() => {
     fetch("/api/complaints")
@@ -65,7 +80,16 @@ export default function StreetCarePage() {
       .catch(() => setLoading(false));
   }, []);
 
-  const health = useMemo(() => computeStreetHealth(complaints), [complaints]);
+  const streetComplaints = useMemo(
+    () =>
+      complaints.filter((c) => {
+        const street = String(c.street ?? "").toLowerCase().trim();
+        return !street || street.includes(selectedStreet.toLowerCase());
+      }),
+    [complaints, selectedStreet]
+  );
+
+  const health = useMemo(() => computeStreetHealth(streetComplaints), [streetComplaints]);
   const offenders = useMemo(
     () =>
       complaints
@@ -75,7 +99,7 @@ export default function StreetCarePage() {
           return sevW(b.severity) - sevW(a.severity);
         })
         .slice(0, 3),
-    [complaints]
+    [streetComplaints]
   );
 
   const grade =
@@ -108,7 +132,7 @@ export default function StreetCarePage() {
           {loading ? (
             <div className="h-[210px] w-[210px] animate-pulse rounded-full bg-slate-100" />
           ) : (
-            <ScoreGauge score={health.overall} label="T. Nagar" sub={grade.label} size={220} />
+            <ScoreGauge score={health.overall} label={selectedStreet} sub={grade.label} size={220} />
           )}
           <div className={cn("mt-4 flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold", grade.bg, grade.color)}>
             <TrendingUp className="h-3.5 w-3.5" />
@@ -164,7 +188,7 @@ export default function StreetCarePage() {
       {/* what's hurting the street */}
       <div>
         <h2 className="mb-3 font-display text-lg font-bold tracking-tight text-slate-900">
-          What is pulling your score down
+          What is pulling {selectedStreet} down
         </h2>
         <div className="space-y-2.5">
           {offenders.map((c, i) => {
