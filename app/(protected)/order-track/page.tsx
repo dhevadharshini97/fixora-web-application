@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, ShieldCheck, ArrowRight, ClipboardSearch, Info } from "lucide-react";
+import { Search, ShieldCheck, ArrowRight, Clipboard, Info } from "lucide-react";
 import { Btn } from "@/components/ui";
 
 function normalizeId(value: string) {
